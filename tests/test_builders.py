@@ -25,7 +25,7 @@ from tmd.fe.free_energy import HostConfig
 from tmd.fe.utils import get_romol_conf, read_sdf, set_romol_conf
 from tmd.ff import sanitize_water_ff
 from tmd.md.barostat.utils import compute_box_volume, get_bond_list, get_group_indices
-from tmd.md.builders import build_protein_system, build_water_system
+from tmd.md.builders import build_membrane_system, build_protein_system, build_water_system
 from tmd.md.minimizer import check_force_norm
 from tmd.potentials import Nonbonded
 from tmd.testsystems.relative import get_hif2a_ligand_pair_single_topology
@@ -102,6 +102,20 @@ def test_build_protein_system_returns_correct_water_count():
             if last_num_waters is not None:
                 assert last_num_waters == host_config.num_water_atoms
             last_num_waters = host_config.num_water_atoms
+
+
+@pytest.mark.nocuda
+def test_build_protein_system_with_membrane():
+    with path_to_internal_file("tmd.testsystems.gpcrs.a2a_hip278", "ligands.sdf") as sdf_path:
+        mols = read_sdf(sdf_path)
+    # Add all the mols in a single pass, as this runs OpenMM CPU MD which is slow
+    with path_to_internal_file("tmd.testsystems.gpcrs.a2a_hip278", "a2a_hip278_capped.pdb") as pdb_path:
+        host_config = build_membrane_system(str(pdb_path), "amber14/protein.ff14SB", "amber14/tip3p", mols=mols)
+    from tmd.fe.cif_writer import CIFWriter
+
+    writer = CIFWriter([host_config.omm_topology], "jank.cif")
+    writer.write_frame(host_config.conf * 10.0)
+    writer.close()
 
 
 def validate_host_config_ions_and_charge(
