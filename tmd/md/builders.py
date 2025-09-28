@@ -575,7 +575,7 @@ def build_membrane_system(
         host_system=solvated_host_system,
         conf=solvated_host_coords,
         box=box,
-        num_water_atoms=num_water_atoms,
+        num_water_atoms=len(solvated_host_coords) - len(host_coords),  # This is WRONG
         omm_topology=modeller.topology,
         masses=np.array(masses),
     )

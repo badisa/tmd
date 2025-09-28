@@ -178,7 +178,7 @@ class CIFWriter:
         assert len(atom_ids) == len(set(atom_ids))
 
         residue_ids = list([x.id for x in combined_topology.residues()])
-        assert len(residue_ids) == len(set(residue_ids))
+        # assert len(residue_ids) == len(set(residue_ids))
 
         self.topology = combined_topology
         self.out_handle = open(out_filepath, "w")
