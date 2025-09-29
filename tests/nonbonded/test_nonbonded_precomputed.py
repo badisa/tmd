@@ -52,7 +52,7 @@ def test_nonbonded_pair_list_precomputed_correctness(
         1 + rng.uniform(0, 1, size=3) * 3
     )  # box should be fully ignored tbh (just like all other bonded forces)
 
-    potential = NonbondedPairListPrecomputed(pair_idxs, beta, cutoff)
+    potential = NonbondedPairListPrecomputed(num_atoms, pair_idxs, beta, cutoff)
 
     # delta_w positive by convention
     test_impl = potential.to_gpu(precision)

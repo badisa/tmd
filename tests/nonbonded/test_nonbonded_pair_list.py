@@ -52,7 +52,7 @@ def test_nonbonded_pair_list_correctness(
 
     rescale_mask = rng.uniform(0, 1, size=(num_pairs, 2)).astype(precision)
 
-    potential = NonbondedPairList(pair_idxs, rescale_mask, beta, cutoff)
+    potential = NonbondedPairList(num_atoms, pair_idxs, rescale_mask, beta, cutoff)
     params = example_nonbonded_potential.params
 
     for params_ in gen_nonbonded_params_with_4d_offsets(rng, params, cutoff):

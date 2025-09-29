@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from functools import partial
 from typing import Any, Optional
 
 import jax.numpy as jnp
@@ -160,10 +159,8 @@ class HostGuestTopology:
         combined_params = jnp.concatenate([host_params, guest_params])
         combined_idxs = np.concatenate([host_idxs, guest_idxs])
         ctor = type(guest_potential)
-        if isinstance(guest_potential, potentials.HarmonicBond):
-            ctor = partial(ctor, self.get_num_atoms())
 
-        return combined_params, ctor(combined_idxs)
+        return combined_params, ctor(self.get_num_atoms(), combined_idxs)
 
     def parameterize_harmonic_bond(self, ff_params):
         guest_params, guest_potential = self.guest_topology.parameterize_harmonic_bond(ff_params)
@@ -332,6 +329,8 @@ class BaseTopology:
             q_params = self.ff.q_handle.partial_parameterize(ff_q_params, self.mol)
             lj_params = self.ff.lj_handle.partial_parameterize(ff_lj_params, self.mol)
 
+        N = len(q_params)
+
         sig_params = lj_params[:, 0]
         eps_params = lj_params[:, 1]
 
@@ -361,7 +360,7 @@ class BaseTopology:
         beta = _BETA
         cutoff = _CUTOFF  # solve for this analytically later
 
-        return params, potentials.NonbondedPairListPrecomputed(inclusion_idxs, beta, cutoff)
+        return params, potentials.NonbondedPairListPrecomputed(N, inclusion_idxs, beta, cutoff)
 
     def parameterize_harmonic_bond(self, ff_params):
         params, idxs = self.ff.hb_handle.partial_parameterize(ff_params, self.mol)
@@ -369,7 +368,7 @@ class BaseTopology:
 
     def parameterize_harmonic_angle(self, ff_params):
         params, idxs = self.ff.ha_handle.partial_parameterize(ff_params, self.mol)
-        return params, potentials.HarmonicAngle(idxs)
+        return params, potentials.HarmonicAngle(self.mol.GetNumAtoms(), idxs)
 
     def parameterize_proper_torsion(self, ff_params):
         params, idxs = self.ff.pt_handle.partial_parameterize(ff_params, self.mol)
@@ -424,9 +423,9 @@ class BaseTopology:
         chiral_bond_restr_idxs = np.array(chiral_bond_restr_idxs, dtype=np.int32).reshape(-1, 4)
         chiral_bond_restr_signs = np.array(chiral_bond_restr_signs)
         chiral_bond_params = np.array(chiral_bond_params)
-        chiral_bond_potential = potentials.ChiralBondRestraint(chiral_bond_restr_idxs, chiral_bond_restr_signs).bind(
-            chiral_bond_params
-        )
+        chiral_bond_potential = potentials.ChiralBondRestraint(
+            self.mol.GetNumAtoms(), chiral_bond_restr_idxs, chiral_bond_restr_signs
+        ).bind(chiral_bond_params)
 
         return chiral_atom_potential, chiral_bond_potential
 
@@ -461,12 +460,14 @@ class BaseTopology:
         improper_potential = mol_it.bind(mol_improper_params)
         nonbonded_potential = mol_nbpl.bind(mol_nbpl_params)
 
-        chiral_atom = ChiralAtomRestraint(np.array([[]], dtype=np.int32).reshape(-1, 4)).bind(
+        chiral_atom = ChiralAtomRestraint(self.mol.GetNumAtoms(), np.array([[]], dtype=np.int32).reshape(-1, 4)).bind(
             np.array([], dtype=np.float64).reshape(-1)
         )
         idxs = np.array([[]], dtype=np.int32).reshape(-1, 4)
         signs = np.array([[]], dtype=np.int32).reshape(-1)
-        chiral_bond = ChiralBondRestraint(idxs, signs).bind(np.array([], dtype=np.float64).reshape(-1))
+        chiral_bond = ChiralBondRestraint(self.mol.GetNumAtoms(), idxs, signs).bind(
+            np.array([], dtype=np.float64).reshape(-1)
+        )
 
         return GuestSystem(
             bond=bond_potential,
@@ -620,7 +621,7 @@ class MultiTopology(BaseTopology):
 
         inclusion_idxs = np.concatenate(mol_idxs)
 
-        return params, potentials.NonbondedPairListPrecomputed(inclusion_idxs, beta, cutoff)
+        return params, potentials.NonbondedPairListPrecomputed(offset, inclusion_idxs, beta, cutoff)
 
     def _parameterize_bonded_term(self, ff_params, bonded_handle, potential):
         offset = 0
@@ -633,9 +634,7 @@ class MultiTopology(BaseTopology):
             offset += mol.GetNumAtoms()
         params_c = jnp.concatenate(mol_parameters)
         idxs_c = np.concatenate(mol_idxs)
-        if potential == potentials.HarmonicBond:
-            potential = partial(potential, offset)
-        return params_c, potential(idxs_c)
+        return params_c, potential(offset, idxs_c)
 
     def parameterize_harmonic_bond(self, ff_params):
         return self._parameterize_bonded_term(ff_params, self.ff.hb_handle, potentials.HarmonicBond)

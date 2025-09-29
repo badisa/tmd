@@ -101,7 +101,7 @@ def test_recomputation_of_energies(precision, rtol, atol, seed):
 
     host_U_fns = host_config.host_system.get_U_fns()
     host_params = [bp.params.astype(np.float32) for bp in host_U_fns]
-    summed_pot = SummedPotential([bp.potential for bp in host_U_fns], host_params)
+    summed_pot = SummedPotential(len(x0), [bp.potential for bp in host_U_fns], host_params)
     bps = []
     ubps = []
 

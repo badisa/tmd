@@ -346,7 +346,7 @@ def test_harmonic_angle(precision, rtol, n_particles=64, n_angles=25, dim=3):
 
     # specific to harmonic angle force
 
-    potential = HarmonicAngle(angle_idxs)
+    potential = HarmonicAngle(n_particles, angle_idxs)
 
     x = x.astype(precision)
     params = params.astype(precision)
@@ -361,8 +361,8 @@ def test_harmonic_angle(precision, rtol, n_particles=64, n_angles=25, dim=3):
     # even the angle computation itself is not guaranteed to be identical (let alone energies and forces).
     # this isn't a deal breaker, but was just a nice to have.
 
-    test_potential = HarmonicAngle(angle_idxs)
-    test_potential_rev = HarmonicAngle(angle_idxs[:, ::-1])
+    test_potential = HarmonicAngle(n_particles, angle_idxs)
+    test_potential_rev = HarmonicAngle(n_particles, angle_idxs[:, ::-1])
 
     test_potential_impl = test_potential.to_gpu(precision).unbound_impl
     test_potential_rev_impl = test_potential_rev.to_gpu(precision).unbound_impl
