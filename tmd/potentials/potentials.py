@@ -1,4 +1,5 @@
 # Copyright 2019-2025, Relay Therapeutics
+# Modifications Copyright 2025 Forrest York
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Optional, cast, overload
@@ -51,9 +53,6 @@ class HarmonicAngle(Potential):
 
     def __call__(self, conf: Conf, params: Params, box: Box) -> float | Array:
         return bonded.harmonic_angle(conf, params, box, self.idxs)
-
-
-import warnings
 
 
 class HarmonicAngleStable(HarmonicAngle):
@@ -116,6 +115,7 @@ class LogFlatBottomBond(Potential):
 
 @dataclass
 class PeriodicTorsion(Potential):
+    num_atoms: int
     idxs: NDArray[np.int32]
 
     def __call__(self, conf: Conf, params: Params, box: Box) -> float | Array:
