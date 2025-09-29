@@ -1,4 +1,5 @@
 // Copyright 2019-2025, Relay Therapeutics
+// Modifications Copyright 2025 Forrest York
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,6 +18,7 @@
 
 #include "bound_potential.hpp"
 #include "curand.h"
+#include "energy_accum.hpp"
 #include "mover.hpp"
 #include "streamed_potential_runner.hpp"
 #include <memory>
@@ -72,9 +74,6 @@ private:
 
   int num_grouped_atoms_;
 
-  size_t sum_storage_bytes_;
-  void *d_sum_temp_storage_;
-
   int *d_num_attempted_;
   int *d_num_accepted_;
 
@@ -100,6 +99,8 @@ private:
                                     // ensure deterministic behavior
 
   StreamedPotentialRunner<RealType> runner_;
+
+  EnergyAccumulator nrg_accum_;
 };
 
 } // namespace tmd
