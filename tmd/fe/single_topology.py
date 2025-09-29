@@ -1303,7 +1303,7 @@ class AlignedNonbondedPairlist(AlignedPotential):
         # boundaries.
         params = batch_interpolate_nonbonded_pair_list_params(self.cutoff, self.src_params, self.dst_params, lamb)
         params = jnp.array(params)
-        return NonbondedPairListPrecomputed(self.idxs, self.beta, self.cutoff).bind(params)
+        return NonbondedPairListPrecomputed(self.num_atoms, self.idxs, self.beta, self.cutoff).bind(params)
 
 
 class SingleTopology(AtomMapMixin):

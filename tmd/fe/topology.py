@@ -364,19 +364,19 @@ class BaseTopology:
 
     def parameterize_harmonic_bond(self, ff_params):
         params, idxs = self.ff.hb_handle.partial_parameterize(ff_params, self.mol)
-        return params, potentials.HarmonicBond(self.mol.GetNumAtoms(), idxs)
+        return params, potentials.HarmonicBond(self.get_num_atoms(), idxs)
 
     def parameterize_harmonic_angle(self, ff_params):
         params, idxs = self.ff.ha_handle.partial_parameterize(ff_params, self.mol)
-        return params, potentials.HarmonicAngle(self.mol.GetNumAtoms(), idxs)
+        return params, potentials.HarmonicAngle(self.get_num_atoms(), idxs)
 
     def parameterize_proper_torsion(self, ff_params):
         params, idxs = self.ff.pt_handle.partial_parameterize(ff_params, self.mol)
-        return params, potentials.PeriodicTorsion(self.mol.GetNumAtoms(), idxs)
+        return params, potentials.PeriodicTorsion(self.get_num_atoms(), idxs)
 
     def parameterize_improper_torsion(self, ff_params):
         params, idxs = self.ff.it_handle.partial_parameterize(ff_params, self.mol)
-        return params, potentials.PeriodicTorsion(self.mol.GetNumAtoms(), idxs)
+        return params, potentials.PeriodicTorsion(self.get_num_atoms(), idxs)
 
     def setup_chiral_restraints(self, chiral_atom_restraint_k, chiral_bond_restraint_k):
         """
@@ -405,7 +405,9 @@ class BaseTopology:
 
         chiral_atom_params = chiral_atom_restraint_k * np.ones(len(chiral_atom_restr_idxs))
         assert len(chiral_atom_params) == len(chiral_atom_restr_idxs)  # TODO: can this be checked in Potential::bind ?
-        chiral_atom_potential = potentials.ChiralAtomRestraint(chiral_atom_restr_idxs).bind(chiral_atom_params)
+        chiral_atom_potential = potentials.ChiralAtomRestraint(self.get_num_atoms(), chiral_atom_restr_idxs).bind(
+            chiral_atom_params
+        )
 
         # chiral bonds
         chiral_bonds = chiral_utils.find_chiral_bonds(mol)
@@ -424,7 +426,7 @@ class BaseTopology:
         chiral_bond_restr_signs = np.array(chiral_bond_restr_signs)
         chiral_bond_params = np.array(chiral_bond_params)
         chiral_bond_potential = potentials.ChiralBondRestraint(
-            self.mol.GetNumAtoms(), chiral_bond_restr_idxs, chiral_bond_restr_signs
+            self.get_num_atoms(), chiral_bond_restr_idxs, chiral_bond_restr_signs
         ).bind(chiral_bond_params)
 
         return chiral_atom_potential, chiral_bond_potential
@@ -460,12 +462,12 @@ class BaseTopology:
         improper_potential = mol_it.bind(mol_improper_params)
         nonbonded_potential = mol_nbpl.bind(mol_nbpl_params)
 
-        chiral_atom = ChiralAtomRestraint(self.mol.GetNumAtoms(), np.array([[]], dtype=np.int32).reshape(-1, 4)).bind(
+        chiral_atom = ChiralAtomRestraint(self.get_num_atoms(), np.array([[]], dtype=np.int32).reshape(-1, 4)).bind(
             np.array([], dtype=np.float64).reshape(-1)
         )
         idxs = np.array([[]], dtype=np.int32).reshape(-1, 4)
         signs = np.array([[]], dtype=np.int32).reshape(-1)
-        chiral_bond = ChiralBondRestraint(self.mol.GetNumAtoms(), idxs, signs).bind(
+        chiral_bond = ChiralBondRestraint(self.get_num_atoms(), idxs, signs).bind(
             np.array([], dtype=np.float64).reshape(-1)
         )
 

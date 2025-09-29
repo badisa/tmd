@@ -8,15 +8,11 @@ pytestmark = [pytest.mark.memcheck]
 
 
 def test_nonbonded_precomputed_pair_list_invalid_pair_idxs():
-    with pytest.raises(RuntimeError) as e:
-        NonbondedPairListPrecomputed([0], 2.0, 1.1).to_gpu(np.float32).unbound_impl
+    with pytest.raises(RuntimeError, match=r"idxs.size\(\) must be exactly 2\*B"):
+        NonbondedPairListPrecomputed(1, [0], 2.0, 1.1).to_gpu(np.float32).unbound_impl
 
-    assert "idxs.size() must be exactly 2*B" in str(e)
-
-    with pytest.raises(RuntimeError) as e:
-        NonbondedPairListPrecomputed([(0, 0)], 2.0, 1.1).to_gpu(np.float32).unbound_impl
-
-    assert "illegal pair with src == dst: 0, 0" in str(e)
+    with pytest.raises(RuntimeError, match="illegal pair with src == dst: 0, 0"):
+        NonbondedPairListPrecomputed(1, [(0, 0)], 2.0, 1.1).to_gpu(np.float32).unbound_impl
 
 
 @pytest.mark.parametrize("beta", [2.0])
