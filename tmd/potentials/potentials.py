@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Optional, cast, overload
@@ -54,19 +53,6 @@ class HarmonicAngle(Potential):
 
     def __call__(self, conf: Conf, params: Params, box: Box) -> float | Array:
         return bonded.harmonic_angle(conf, params, box, self.idxs)
-
-
-class HarmonicAngleStable(HarmonicAngle):
-    def __init__(self, *args, **kwargs):
-        warnings.warn("HarmonicAngleStable is deprecated and will be removed in a future release.", DeprecationWarning)
-        super().__init__(*args, **kwargs)
-
-    def __setstate__(self, state):
-        warnings.warn("HarmonicAngleStable is deprecated and will be removed in a future release.", DeprecationWarning)
-        self.__dict__ = state  # ugly
-
-    def __getstate__(self):
-        raise NotImplementedError("HarmonicAngleStable is deprecated. Serialization is disabled.")
 
 
 @dataclass
