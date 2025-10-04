@@ -28,10 +28,12 @@ from tmd._vendored.pymbar.utils import kln_to_kn
 from tmd.constants import BOLTZ
 from tmd.fe import model_utils, topology
 from tmd.fe.bar import (
+    MBARConvergence,
     bar_with_pessimistic_uncertainty,
     construct_mbar_from_u_kln,
     df_and_err_from_mbar,
     pair_overlap_from_mbar,
+    sanitize_energies_for_bar,
     works_from_ukln,
 )
 from tmd.fe.plots import (
@@ -74,6 +76,39 @@ class RESTParams:
 
 
 @dataclass(frozen=True)
+class EarlyTerminationParams:
+    """Parameters that define early termination of HREX.
+
+    Parameters
+    ----------
+
+    prediction_delta: float
+        The difference between past predictions before terminating. Units in kJ/mol
+
+    num_samples: int
+        The number of samples to collect before considering early termination. Must be at least 2
+
+    interval: int
+        How often to compute an estimate. Reducing this calls MBAR more often, which can slow down HREX. Must be at least 1.
+
+    slope_threshold: float
+        What percentage of the max possible slope implied by the prediction delta is tolerated. Must be within range (0, 1.0]
+        See tmd.fe.bar.MBARConvergence for more details
+    """
+
+    prediction_delta: float
+    num_samples: int = 10
+    interval: int = 25
+    slope_threshold: float = 0.75
+
+    def __post_init__(self):
+        assert self.prediction_delta > 0.0
+        assert self.num_samples >= 2
+        assert self.interval >= 1
+        assert 0.0 < self.slope_threshold <= 1.0
+
+
+@dataclass(frozen=True)
 class HREXParams:
     """
     Parameters
@@ -96,9 +131,10 @@ class HREXParams:
     """
 
     n_frames_bisection: int = 100
-    max_delta_states: Optional[int] = 4
-    optimize_target_overlap: Optional[float] = None
-    rest_params: Optional[RESTParams] = None
+    max_delta_states: int | None = 4
+    optimize_target_overlap: float | None = None
+    rest_params: RESTParams | None = None
+    early_termination_params: EarlyTerminationParams | None = None
 
     def __post_init__(self):
         assert self.n_frames_bisection > 0
@@ -787,10 +823,6 @@ def sample(initial_state: InitialState, md_params: MDParams, max_buffer_frames: 
     )
 
 
-class IndeterminateEnergyWarning(UserWarning):
-    pass
-
-
 def estimate_free_energy_bar(u_kln_by_component: NDArray, temperature: float, n_bootstrap: int = 0) -> BarResult:
     """
     Estimate free energy difference for a pair of states given pre-generated samples.
@@ -805,7 +837,7 @@ def estimate_free_energy_bar(u_kln_by_component: NDArray, temperature: float, n_
 
     n_bootstrap: int
         Number of bootstrap iterations for Bar error estimation.
-        If n_bootstrap == 0, will return Bar uncertainity without bootstrapping.
+        If n_bootstrap == 0, will return Bar uncertainty without bootstrapping.
 
     Return
     ------
@@ -815,19 +847,7 @@ def estimate_free_energy_bar(u_kln_by_component: NDArray, temperature: float, n_
     """
     assert n_bootstrap >= 0
 
-    # 1. We represent energies that we aren't able to evaluate (e.g. because of a fixed-point overflow in GPU potential code) with NaNs, but
-    # 2. pymbar.mbar.MBAR will fail with LinAlgError if there are NaNs in the input.
-    #
-    # To work around this, we replace any NaNs with np.inf prior to the MBAR calculation.
-    #
-    # This is reasonable because u(x) -> inf corresponds to probability(x) -> 0, so this in effect declares that these
-    # pathological states have zero weight.
-    if np.any(np.isnan(u_kln_by_component)):
-        warn(
-            "Encountered NaNs in u_kln matrix. Replacing each instance with inf prior to MBAR calculation",
-            IndeterminateEnergyWarning,
-        )
-        u_kln_by_component = np.where(np.isnan(u_kln_by_component), np.inf, u_kln_by_component)
+    u_kln_by_component = sanitize_energies_for_bar(u_kln_by_component)
 
     u_kln = u_kln_by_component.sum(0)
 
@@ -1255,13 +1275,7 @@ def verify_and_sanitize_potential_matrix(
     replica_energies = np.diagonal(U_kl[replica_idx_by_state])
     assert np.all(np.isfinite(replica_energies)), "Replicas have non-finite energies"
     assert np.all(np.abs(replica_energies) < abs_energy_threshold), "Energies larger in magnitude than tolerated"
-    if np.any(np.isnan(U_kl)):
-        warn(
-            "Encountered NaNs in potential matrix. Replacing each instance with inf",
-            IndeterminateEnergyWarning,
-        )
-        U_kl = np.where(np.isnan(U_kl), np.inf, U_kl)
-    return U_kl
+    return sanitize_energies_for_bar(U_kl)
 
 
 def assert_ensembles_compatible(state_a: InitialState, state_b: InitialState):
@@ -1402,7 +1416,9 @@ def generate_pair_bar_ulkns(
             for state_idx, p_us in zip(state_idxs, per_pot_us):
                 energies_by_frames_by_params[i, state_idx, j] = p_us
 
-    u_kln_by_component_by_lambda = np.empty((len(initial_states) - 1, len(unbound_impls), 2, 2, num_samples))
+    u_kln_by_component_by_lambda = np.empty(
+        (len(initial_states) - 1, len(unbound_impls), 2, 2, num_samples), dtype=np.float32
+    )
     for i, states in enumerate(zip(range(len(initial_states)), range(1, len(initial_states)))):
         assert len(states) == 2
         for j in range(len(unbound_impls)):
@@ -1522,6 +1538,15 @@ def run_sims_hrex(
         (len(bound_potentials), len(initial_states), len(initial_states), md_params.n_frames), np.inf, dtype=np.float32
     )
 
+    convergence: MBARConvergence | None = None
+    if md_params.hrex_params.early_termination_params is not None:
+        convergence = MBARConvergence(
+            md_params.hrex_params.early_termination_params.num_samples,
+            md_params.hrex_params.early_termination_params.prediction_delta,
+            slope_threshold=md_params.hrex_params.early_termination_params.slope_threshold,
+            kBT=kBT,
+        )
+
     for current_frame in range(md_params.n_frames):
         water_sampling_acceptance_proposal_counts_by_state = [(0, 0) for _ in range(len(initial_states))]
 
@@ -1594,7 +1619,9 @@ def run_sims_hrex(
         U_kl = verify_and_sanitize_potential_matrix(U_kl_raw.sum(0), hrex.replica_idx_by_state)
 
         # Re-order energies by state
-        iterated_u_kln[:, :, :, current_frame] = np.array(U_kl_raw[:, hrex.replica_idx_by_state]) / kBT
+        iterated_u_kln[:, :, :, current_frame] = (
+            sanitize_energies_for_bar(np.array(U_kl_raw[:, hrex.replica_idx_by_state])) / kBT
+        )
         log_q_kl = -U_kl / kBT
 
         replica_idx_by_state_by_iter.append(hrex.replica_idx_by_state)
@@ -1618,6 +1645,18 @@ def run_sims_hrex(
             samples.final_barostat_volume_scale_factor = final_barostat_volume_scale_factor
 
         fraction_accepted_by_pair_by_iter.append(fraction_accepted_by_pair)
+
+        if (
+            md_params.hrex_params.early_termination_params is not None
+            and (current_frame + 1) % md_params.hrex_params.early_termination_params.interval == 0
+        ):
+            assert convergence is not None
+            convergence.add_estimate_from_u_kln(iterated_u_kln.sum(0)[:, :, : current_frame + 1])
+            if convergence.converged():
+                print(
+                    f"HREX terminating after {current_frame + 1} frames, the MBAR estimates converged.  The max difference in the last {md_params.hrex_params.early_termination_params.num_samples} estimates is {convergence.max_difference():.2f} kJ/mol"
+                )
+                break
 
         if print_diagnostics_interval and (current_frame + 1) % print_diagnostics_interval == 0:
             current_time = time.perf_counter()
@@ -1659,14 +1698,20 @@ def run_sims_hrex(
 
             last_update_time = current_time
 
-    neighbor_ulkns_by_component = [iterated_u_kln[:, i : i + 2, i : i + 2, :] for i in range(len(initial_states) - 1)]
+    neighbor_ulkns_by_component = [
+        iterated_u_kln[:, i : i + 2, i : i + 2, : current_frame + 1] for i in range(len(initial_states) - 1)
+    ]
 
     pair_bar_results = [
         estimate_free_energy_bar(u_kln_by_component, temperature, n_bootstrap=100)
         for u_kln_by_component in neighbor_ulkns_by_component
     ]
 
-    hrex_diagnostics = HREXDiagnostics(replica_idx_by_state_by_iter, fraction_accepted_by_pair_by_iter)
+    hrex_diagnostics = HREXDiagnostics(
+        replica_idx_by_state_by_iter,
+        fraction_accepted_by_pair_by_iter,
+        None if convergence is None else convergence.estimates(),
+    )
     ws_diagnostics: WaterSamplingDiagnostics | None = None
     if md_params.water_sampling_params is not None:
         ws_diagnostics = WaterSamplingDiagnostics(np.array(water_sampler_proposals_by_state_by_iter, dtype=np.int32))
